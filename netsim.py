@@ -1,6 +1,7 @@
 import heapq as hq
 import itertools
 import csv
+import copy
 
 
 class PQ(object):
@@ -38,6 +39,22 @@ class PQ(object):
         raise KeyError('pop from an empty priority queue')
 
 
+class Handle(object):
+    def __init__(self, network):
+        self.network = network
+        self.message = None
+
+    def inject(self, message):
+        return self.network.inject(self.message)
+
+    def __call__(self):
+        if self.message:
+            return self.network.inject(self.message)
+
+
+
+
+
 class Message():
     next_id = 0
 
@@ -50,14 +67,17 @@ class Message():
         self.progress = 0.0
         self.edges = []
         self.last_update_time = 0.0
+        self.finish_handle = Handle(self)
+
     def __repr__(self):
         return "["+str(self.id_)+"] " + str(self.src) + " --" + str(int(self.progress))+"/"+str(self.count) + "--> " + str(self.dst)
 
 class Event(object):
     next_id = 0
-    def __init__(self):
+    def __init__(self, callbacks=[]):
         self.id_ = Event.next_id
         Event.next_id += 1
+        self.callbacks = callbacks
 
 class InjectMessageEvent(Event):
     def __init__(self, message):
@@ -87,6 +107,8 @@ class Edge(object):
         return self.bandwidth / len(self.active_messages)
 
 class Network(object):
+
+
     def __init__(self):
         self.time = 0.0
         self.events = PQ()
@@ -102,7 +124,9 @@ class Network(object):
 
 
     def inject(self, message):
+        message.finish_handle.network = self
         self.events.add_task(InjectMessageEvent(message), self.time)
+        return message.finish_handle
 
     def bfs_paths(self, start, goal):
         queue = [(start, [start])]
@@ -134,8 +158,6 @@ class Network(object):
                     new_priorities[event] = self.time + time_remaining
         for event in new_priorities:
             self.events.add_task(event, new_priorities[event])
-            
-            
             message.progress += (self.time - message.last_update_time) * route_bandwidth
 
 
@@ -197,6 +219,8 @@ class Network(object):
 
             elif isinstance(event, FinishMessageEvent):
                 message = self.messages[event.message_id]
+                del self.messages[event.message_id]
+
                 print self.time, "Message", message, "completed!"
 
                 ## remove the message from any links
@@ -205,7 +229,8 @@ class Network(object):
 
                 ## update how much time messages need to finish
                 self.update_message_finishes()
-                del self.messages[event.message_id]
+
+                message.finish_handle()
 
 
             elif isinstance(event, InjectMessageEvent):
@@ -243,9 +268,15 @@ n.join(2, 5, Edge(2**19))
 n.join(2, 6, Edge(2**19))
 
 
-h1 = n.inject(Message(3, 4, 1024))
-h2 = n.inject(Message(5, 6, 1024))
-h3 = n.inject(Message(3, 6, 1024))
+h = n.inject(Message(3, 4, 1024))
+h = n.inject(Message(5, 6, 1024))
+h = n.inject(Message(3, 6, 1024))
+
+## Ping-pong a bit
+h.message = Message(6,3,1024)
+# h = h.inject(Message(6,3,1024))
+
+
 
 # n.after(h1, 0.1, Message(3 ,4, 1024))
 
