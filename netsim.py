@@ -205,8 +205,9 @@ class Network(object):
 
                 ## update how much time messages need to finish
                 self.update_message_finishes()
-
                 del self.messages[event.message_id]
+
+
             elif isinstance(event, InjectMessageEvent):
                 message = event.message
                 self.messages[message.id_] = message
@@ -242,9 +243,10 @@ n.join(2, 5, Edge(2**19))
 n.join(2, 6, Edge(2**19))
 
 
-n.inject(Message(3, 4, 1024))
-n.inject(Message(5, 6, 1024))
-n.inject(Message(3, 6, 1024))
+h1 = n.inject(Message(3, 4, 1024))
+h2 = n.inject(Message(5, 6, 1024))
+h3 = n.inject(Message(3, 6, 1024))
 
+# n.after(h1, 0.1, Message(3 ,4, 1024))
 
 n.run()
