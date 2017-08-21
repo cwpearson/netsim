@@ -40,19 +40,18 @@ class PQ(object):
 
 
 class Handle(object):
-    def __init__(self, network):
+    def __init__(self, network, message=None):
         self.network = network
-        self.message = None
+        self.to_inject = message
 
     def inject(self, message):
-        return self.network.inject(self.message)
+        self.to_inject = message
+        self.to_inject.network = self.network
+        return self.to_inject.finish_handle
 
     def __call__(self):
-        if self.message:
-            return self.network.inject(self.message)
-
-
-
+        if self.to_inject:
+            return self.network.inject(self.to_inject)
 
 
 class Message():
@@ -67,7 +66,7 @@ class Message():
         self.progress = 0.0
         self.edges = []
         self.last_update_time = 0.0
-        self.finish_handle = Handle(self)
+        self.finish_handle = Handle(None)
 
     def __repr__(self):
         return "["+str(self.id_)+"] " + str(self.src) + " --" + str(int(self.progress))+"/"+str(self.count) + "--> " + str(self.dst)
@@ -273,10 +272,12 @@ h = n.inject(Message(5, 6, 1024))
 h = n.inject(Message(3, 6, 1024))
 
 ## Ping-pong a bit
-h.message = Message(6,3,1024)
-# h = h.inject(Message(6,3,1024))
-
-
+h = h.inject(Message(6,3,1024))
+h = h.inject(Message(3,6,1024))
+h = h.inject(Message(6,3,1024))
+h = h.inject(Message(3,6,1024))
+h = h.inject(Message(6,3,1024))
+h = h.inject(Message(3,6,1024))
 
 # n.after(h1, 0.1, Message(3 ,4, 1024))
 
