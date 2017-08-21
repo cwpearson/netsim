@@ -1,5 +1,6 @@
 import heapq as hq
 import itertools
+import csv
 
 
 class PQ(object):
@@ -138,8 +139,22 @@ class Network(object):
             message.progress += (self.time - message.last_update_time) * route_bandwidth
 
 
+    def dump_edge_use(self, init=False):
+        if init:
+            csvfile = open("edge-contention.csv", "w")
+            writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+            row = ["time"] + [i for i in range(len(self.edges))]
+            writer.writerow(row)
+        else:
+            csvfile = open("edge-contention.csv", "a")
+            writer = csv.writer(csvfile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        row = [self.time] + [len(edge.active_messages) for edge in self.edges]
+        writer.writerow(row)
+        csvfile.close()
 
     def run(self):
+
+        self.dump_edge_use(init=True)
 
         while len(self.events) > 0:
             self.time, event = self.events.pop_task()
@@ -210,6 +225,8 @@ class Network(object):
             
             else:
                 assert False
+
+            self.dump_edge_use()
 
         print "Simulation @", self.time, "FINISHED!"
 
