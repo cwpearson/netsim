@@ -193,6 +193,9 @@ class Network(object):
                 print "Active message", message.id_, "progress:", message.progress, "/", message.count
 
             if isinstance(event, TxMessageEvent):
+                # Print the state of the links before we start transmitting
+                self.dump_edge_use()
+
                 ## get the route the message will take
                 message = self.messages[event.message_id]
                 print "TxMessageEvent message:", message
@@ -216,7 +219,13 @@ class Network(object):
                 message.finish_event = finish_event
                 self.events.add_task(finish_event, self.time + current_required_time)
 
+
+                self.dump_edge_use()
+
             elif isinstance(event, FinishMessageEvent):
+                # Print the state of the links before we stop transmitting
+                self.dump_edge_use()
+
                 message = self.messages[event.message_id]
                 del self.messages[event.message_id]
 
@@ -230,6 +239,7 @@ class Network(object):
                 self.update_message_finishes()
 
                 message.finish_handle()
+                self.dump_edge_use()
 
 
             elif isinstance(event, InjectMessageEvent):
@@ -250,8 +260,6 @@ class Network(object):
             
             else:
                 assert False
-
-            self.dump_edge_use()
 
         print "Simulation @", self.time, "FINISHED!"
 
