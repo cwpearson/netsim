@@ -1,20 +1,17 @@
 import csv
 from priorityqueue import PQ 
 
+NO_OP = lambda *args, **kwargs: None
 
-class Handle(object):
-    def __init__(self, network, message=None):
-        self.network = network
-        self.to_inject = message
+class MessageHandle(object):
+    def __init__(self):
+        self._on_finish = NO_OP
 
-    def inject(self, message):
-        self.to_inject = message
-        self.to_inject.network = self.network
-        return self.to_inject.finish_handle
+    def on_finish(self, func):
+        self._on_finish = func
 
-    def __call__(self):
-        if self.to_inject:
-            return self.network.inject(self.to_inject)
+
+
 
 
 class Message():
@@ -30,7 +27,7 @@ class Message():
         self.edges = []
         self.nodes = []
         self.last_update_time = 0.0
-        self.finish_handle = Handle(None)
+        self.handle = MessageHandle()
 
     def __repr__(self):
         return "["+str(self.id_)+"] " + str(self.src) + " --" + str(int(self.progress))+"/"+str(self.count) + "--> " + str(self.dst)
@@ -99,9 +96,8 @@ class Network(object):
 
 
     def inject(self, message, delay=0.0):
-        message.finish_handle.network = self
         self.events.add_task(InjectMessageEvent(message), self.time + delay)
-        return message.finish_handle
+        return message.handle
 
     def bfs_paths(self, start, goal):
         queue = [(start, [start])]
@@ -232,7 +228,8 @@ class Network(object):
                 ## update how much time messages need to finish
                 self.update_message_finishes()
 
-                message.finish_handle()
+                ## Trigger what happens when a message is finished
+                message.finisher()
                 self.dump_edge_use()
 
 
