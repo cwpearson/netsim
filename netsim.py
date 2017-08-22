@@ -1,42 +1,5 @@
-import heapq as hq
-import itertools
 import csv
-import copy
-
-
-class PQ(object):
-    REMOVED = '<removed entry>'
-
-    def __init__(self):
-        self.pq = [] # list of entries arranged in a heap
-        self.entry_finder = {} # mapping of tasks to entries
-        self.counter = itertools.count()     # unique sequence count                             
-
-    def __len__(self):
-        return len(self.pq)
-
-    def add_task(self, task, priority=0):
-        'Add a new task or update the priority of an existing task'
-        if task in self.entry_finder:
-            self.remove_task(task)
-        count = next(self.counter)
-        entry = [priority, count, task]
-        self.entry_finder[task] = entry
-        hq.heappush(self.pq, entry)
-
-    def remove_task(self, task):
-        'Mark an existing task as REMOVED.  Raise KeyError if not found.'
-        entry = self.entry_finder.pop(task)
-        entry[-1] = PQ.REMOVED
-
-    def pop_task(self):
-        'Remove and return the lowest priority task. Raise KeyError if empty.'
-        while self.pq:
-            priority, count, task = hq.heappop(self.pq)
-            if task is not PQ.REMOVED:
-                del self.entry_finder[task]
-                return priority, task
-        raise KeyError('pop from an empty priority queue')
+from priorityqueue import PQ 
 
 
 class Handle(object):
@@ -261,7 +224,8 @@ class Network(object):
             else:
                 assert False
 
-        print "Simulation @", self.time, "FINISHED!"
+
+        return self.time
 
 
 n = Network()
@@ -287,6 +251,5 @@ h = h.inject(Message(3,6,1024))
 h = h.inject(Message(6,3,1024))
 h = h.inject(Message(3,6,1024))
 
-# n.after(h1, 0.1, Message(3 ,4, 1024))
-
-n.run()
+end_time = n.run()
+print "Simulation took", end_time
