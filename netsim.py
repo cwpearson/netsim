@@ -6,7 +6,7 @@ import copy
 
 class PQ(object):
     REMOVED = '<removed entry>'
-    
+
     def __init__(self):
         self.pq = [] # list of entries arranged in a heap
         self.entry_finder = {} # mapping of tasks to entries
