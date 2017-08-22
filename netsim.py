@@ -28,6 +28,7 @@ class Message():
         self.count = count
         self.progress = 0.0
         self.edges = []
+        self.nodes = []
         self.last_update_time = 0.0
         self.finish_handle = Handle(None)
 
@@ -57,12 +58,18 @@ class FinishMessageEvent(Event):
         self.message_id = message_id
 
 class Node(object):
-    def __init__(self, latency):
-        self.latency = latency
+    def __init__(self, bandwidth, latency=0.0):
+        self.bandwidth = float(bandwidth)
+        self.latency = float(latency)
+        self.active_messages = set()
+
+    def effective_bandwidth(self):
+        return self.bandwidth / len(self.active_messages)
 
 class Edge(object):
-    def __init__(self, bandwidth):
+    def __init__(self, bandwidth, latency=0.0):
         self.bandwidth = float(bandwidth)
+        self.latency = float(latency)
         self.active_messages = set()
 
     def effective_bandwidth(self):
@@ -75,9 +82,16 @@ class Network(object):
         self.events = PQ()
         self.graph = {}
         self.edges = []
+        self.nodes = []
         self.messages = {}
 
+    def add_node(self, node):
+        self.nodes += [node]
+        return len(self.nodes) - 1
+
     def join(self, n1, n2, edge):
+        assert n1 < len(self.nodes)
+        assert n2 < len(self.nodes)
         self.edges += [edge]
         edge_idx = len(self.edges) - 1
         self.graph.setdefault(n1, {})[n2] = edge_idx
@@ -101,16 +115,26 @@ class Network(object):
                     queue.append((nbr, path + [nbr]))
 
 
-    def get_bandwidth(self, route_edges):
+    def get_node_bandwidth(self, route_nodes):
+        return min([self.nodes[node_id].effective_bandwidth() for node_id in route_nodes])
+
+    def get_edge_bandwidth(self, route_edges):
         return min([self.edges[edge_id].effective_bandwidth() for edge_id in route_edges])
 
+    def get_node_latency(self, route_nodes):
+        return sum([self.nodes[node_id].latency for node_id in route_nodes])
+
+    def get_edge_latency(self, route_edges):
+        return sum([self.edges[edge_id].latency for edge_id in route_edges])
 
     def update_message_finishes(self):
         new_priorities = {}
         for priority, count, event in self.events.pq:
             if isinstance(event, FinishMessageEvent):
                 message = self.messages[event.message_id]
-                route_bandwidth = self.get_bandwidth(message.edges)
+                node_bandwidth = self.get_node_bandwidth(message.nodes)
+                edge_bandwidth = self.get_edge_bandwidth(message.edges)
+                route_bandwidth = min(node_bandwidth, edge_bandwidth)
                 time_remaining = (message.count - message.progress) / route_bandwidth
                 # Update the event with the time remaining
                 new_priority = self.time + time_remaining
@@ -147,7 +171,9 @@ class Network(object):
             for edge in self.edges:
                 for message_id in edge.active_messages:
                     message = self.messages[message_id]
-                    route_bandwidth = self.get_bandwidth(message.edges)
+                    node_bandwidth = self.get_node_bandwidth(message.nodes)
+                    edge_bandwidth = self.get_edge_bandwidth(message.edges)
+                    route_bandwidth = min(node_bandwidth, edge_bandwidth)
                     message.progress += (self.time - message.last_update_time) * route_bandwidth
                     message.last_update_time = self.time
             
@@ -163,9 +189,14 @@ class Network(object):
                 print "TxMessageEvent message:", message
 
 
+                ## Set the time on the message entering the network
+                message.last_update_time = self.time
+
                 ## Update the required time for each active message
                 for edge in message.edges:
                     self.edges[edge].active_messages.add(message.id_)
+                for node in message.nodes:
+                    self.nodes[node].active_messages.add(message.id_)
 
                 ## Update how muh time each message will need to finish
                 self.update_message_finishes()
@@ -181,7 +212,6 @@ class Network(object):
                 message.finish_event = finish_event
                 self.events.add_task(finish_event, self.time + current_required_time)
 
-
                 self.dump_edge_use()
 
             elif isinstance(event, FinishMessageEvent):
@@ -196,6 +226,8 @@ class Network(object):
                 ## remove the message from any links
                 for edge in message.edges:
                     self.edges[edge].active_messages.remove(message.id_)
+                for node in message.nodes:
+                    self.nodes[node].active_messages.remove(message.id_)
 
                 ## update how much time messages need to finish
                 self.update_message_finishes()
@@ -209,12 +241,16 @@ class Network(object):
                 self.messages[message.id_] = message
 
                 ## Determine the route the message will take
-                route_nodes = list(self.bfs_paths(message.src, message.dst))[0]
-                for idx in range(len(route_nodes) - 1):
-                    message.edges += [self.graph[route_nodes[idx]][route_nodes[idx+1]]]
+                message.nodes = list(self.bfs_paths(message.src, message.dst))[0]
+                for idx in range(len(message.nodes) - 1):
+                    message.edges += [self.graph[message.nodes[idx]][message.nodes[idx+1]]]
 
-                tx_time = self.time
-                print "message will be tx @", tx_time, "on route", route_nodes
+                node_latency = self.get_node_latency(message.nodes)
+                edge_latency = self.get_edge_latency(message.edges)
+
+                # Model the latency by delating the transmit time
+                tx_time = self.time + node_latency + edge_latency
+                print "message will be tx @", tx_time, "on route", message.nodes
                 self.events.add_task(TxMessageEvent(message.id_), tx_time)
 
                 
@@ -230,12 +266,20 @@ class Network(object):
 n = Network()
 
 # Fat tree
-n.join(0, 1, Edge(2**21))
-n.join(0, 2, Edge(2**21))
-n.join(1, 3, Edge(2**20))
-n.join(1, 4, Edge(2**20))
-n.join(2, 5, Edge(2**19))
-n.join(2, 6, Edge(2**19))
+n0 = n.add_node(Node(float('inf'), 0.0))
+n1 = n.add_node(Node(float('inf'), 0.0))
+n2 = n.add_node(Node(float('inf'), 0.0))
+n3 = n.add_node(Node(float('inf'), 0.0))
+n4 = n.add_node(Node(float('inf'), 0.0))
+n5 = n.add_node(Node(float('inf'), 0.0))
+n6 = n.add_node(Node(float('inf'), 0.0))
+
+n.join(n0, n1, Edge(2**21))
+n.join(n0, n2, Edge(2**21))
+n.join(n1, n3, Edge(2**20))
+n.join(n1, n4, Edge(2**20))
+n.join(n2, n5, Edge(2**19))
+n.join(n2, n6, Edge(2**19))
 
 
 h = n.inject(Message(3, 4, 1024))
