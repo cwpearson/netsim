@@ -68,13 +68,20 @@ class Node(object):
         self.latency = float(latency)
         self.active_messages = set()
 
+    def reset(self):
+        self.active_messages = set()
+
     def effective_bandwidth(self):
         return self.bandwidth / len(self.active_messages)
+
 
 class Edge(object):
     def __init__(self, bandwidth, latency=0.0):
         self.bandwidth = float(bandwidth)
         self.latency = float(latency)
+        self.active_messages = set()
+
+    def reset(self):
         self.active_messages = set()
 
     def effective_bandwidth(self):
@@ -92,6 +99,15 @@ class Network(object):
         self.messages = {}
         self.pending = {}
 
+    def reset(self):
+        for e in self.edges:
+            e.reset()
+        for n in self.nodes:
+            n.reset()
+        self.messages = {}
+        self.pending = {}
+        self.time = 0.0
+
     def add_node(self, node):
         self.nodes += [node]
         return len(self.nodes) - 1
@@ -99,6 +115,14 @@ class Network(object):
     def join(self, n1, n2, edge):
         assert n1 < len(self.nodes)
         assert n2 < len(self.nodes)
+
+        # If there is an existing edge, overwrite it
+        if n1 in self.graph:
+            if n2 in self.graph[n1]:
+                edge_id = self.graph[n1][n2]
+                self.edges[edge_id] = edge
+                return
+
         self.edges += [edge]
         edge_idx = len(self.edges) - 1
         self.graph.setdefault(n1, {})[n2] = edge_idx
@@ -202,8 +226,8 @@ class Network(object):
                     message.progress += (self.time - message.last_update_time) * route_bandwidth
                     message.last_update_time = self.time
             
-            for message in self.messages.itervalues():
-                print "Active message", message.id_, "progress:", message.progress, "/", message.count
+            # for message in self.messages.itervalues():
+            #     print "Active message", message.id_, "progress:", message.progress, "/", message.count
 
             if isinstance(event, TxMessageEvent):
                 # Print the state of the links before we start transmitting
@@ -230,9 +254,9 @@ class Network(object):
                 # print "bw:", route_bandwidth
 
                 current_required_time = message.count / route_bandwidth
-                print "message", message.id_, "needs", current_required_time
+                # print "message", message.id_, "needs", current_required_time
 
-                print "processing", message
+                # print "processing", message
                 finish_event = FinishMessageEvent(message.id_)
                 message.finish_event = finish_event
                 self.events.add_task(finish_event, self.time + current_required_time)
