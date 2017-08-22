@@ -3,7 +3,11 @@ from priorityqueue import PQ
 
 NO_OP = lambda *args, **kwargs: None
 
-class MessageHandle(object):
+class Publisher(object):
+    def __init__(self):
+        pass
+
+class MessagePublisher(object):
     def __init__(self):
         self._on_finish = NO_OP
 
@@ -27,10 +31,14 @@ class Message():
         self.edges = []
         self.nodes = []
         self.last_update_time = 0.0
-        self.handle = MessageHandle()
 
     def __repr__(self):
         return "["+str(self.id_)+"] " + str(self.src) + " --" + str(int(self.progress))+"/"+str(self.count) + "--> " + str(self.dst)
+
+class PendingMessage():
+    def __init__(self, message, delay):
+        self.message = message
+        self.delay = delay
 
 class Event(object):
     next_id = 0
@@ -72,6 +80,7 @@ class Edge(object):
     def effective_bandwidth(self):
         return self.bandwidth / len(self.active_messages)
 
+
 class Network(object):
 
     def __init__(self):
@@ -81,6 +90,7 @@ class Network(object):
         self.edges = []
         self.nodes = []
         self.messages = {}
+        self.pending = {}
 
     def add_node(self, node):
         self.nodes += [node]
@@ -95,9 +105,11 @@ class Network(object):
         self.graph.setdefault(n2, {})[n1] = edge_idx
 
 
-    def inject(self, message, delay=0.0):
-        self.events.add_task(InjectMessageEvent(message), self.time + delay)
-        return message.handle
+    def inject(self, message, waitfor=[], delay=0.0):
+        p = PendingMessage(message, delay)
+        self.pending[p] = set(waitfor)
+        # self.events.add_task(InjectMessageEvent(message), self.time + delay)
+        return message
 
     def bfs_paths(self, start, goal):
         queue = [(start, [start])]
@@ -155,11 +167,28 @@ class Network(object):
         writer.writerow(row)
         csvfile.close()
 
+    def trigger_pending(self):
+        '''Inject any pending messages with no dependencies'''
+        issued = []
+        for pending_message, deps in self.pending.iteritems():
+            if not deps: # not waiting on anything
+                message = pending_message.message
+                delay = pending_message.delay
+                self.events.add_task(InjectMessageEvent(message), self.time + delay)
+                issued += [pending_message]
+        for key in issued:
+            del self.pending[key]
+        if issued:
+            print "issued", len(issued), "messages"
+
     def run(self):
 
         self.dump_edge_use(init=True)
 
+        self.trigger_pending()
+
         while len(self.events) > 0:
+
             self.time, event = self.events.pop_task()
             print "Simulation @ " + str(self.time)+"s:", event
 
@@ -229,7 +258,10 @@ class Network(object):
                 self.update_message_finishes()
 
                 ## Trigger what happens when a message is finished
-                message.finisher()
+                for deps in self.pending.itervalues():
+                    if message in deps:
+                        deps.remove(message)
+
                 self.dump_edge_use()
 
 
@@ -256,5 +288,6 @@ class Network(object):
             else:
                 assert False
 
+            self.trigger_pending()
 
         return self.time
