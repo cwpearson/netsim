@@ -24,7 +24,9 @@ h = n.inject(Message(5, 6, 1024))
 h = n.inject(Message(3, 6, 1024))
 
 for i in range(0,5):
-    h = n.inject(Message(3,6,1024), waitfor=[h], delay=0.01)
+    h1 = n.inject(Message(0,3,1024), waitfor=[h], delay=0.01)
+    h2 = n.inject(Message(0,4,1024), waitfor=[h], delay=0.01)
+    h = n.inject(Message(3,0,1024), waitfor=[h1, h2], delay=0.02)
 
 h = n.inject(Message(3,6,1024), waitfor=[h], delay=0.01)
 
