@@ -70,7 +70,6 @@ class Edge(object):
 
 class Network(object):
 
-
     def __init__(self):
         self.time = 0.0
         self.events = PQ()
@@ -85,9 +84,9 @@ class Network(object):
         self.graph.setdefault(n2, {})[n1] = edge_idx
 
 
-    def inject(self, message):
+    def inject(self, message, delay=0.0):
         message.finish_handle.network = self
-        self.events.add_task(InjectMessageEvent(message), self.time)
+        self.events.add_task(InjectMessageEvent(message), self.time + delay)
         return message.finish_handle
 
     def bfs_paths(self, start, goal):
