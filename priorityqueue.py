@@ -1,16 +1,14 @@
 import itertools
 import heapq as hq
 
+
 class PQ(object):
     REMOVED = '<removed entry>'
 
     def __init__(self):
-        self.pq = [] # list of entries arranged in a heap
-        self.entry_finder = {} # mapping of tasks to entries
-        self.counter = itertools.count()     # unique sequence count                             
-
-    def __len__(self):
-        return len(self.pq)
+        self.pq = []  # list of entries arranged in a heap
+        self.entry_finder = {}  # mapping of tasks to entries
+        self.counter = itertools.count()     # unique sequence count
 
     def add_task(self, task, priority=0):
         'Add a new task or update the priority of an existing task'
@@ -34,3 +32,6 @@ class PQ(object):
                 del self.entry_finder[task]
                 return priority, task
         raise KeyError('pop from an empty priority queue')
+
+    def __len__(self):
+        return len([None for _, _, task in self.pq if task != PQ.REMOVED])
