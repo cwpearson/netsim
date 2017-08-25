@@ -8,13 +8,13 @@ import pprint
 pp = pprint.PrettyPrinter(depth=2)
 
 
-class ProgressUpdate():
-    def __init__(self, progress=0.0, last_update=0.0):
-        self.progress = progress
+class ActivityRecord(object):
+    def __init__(self, value, last_update):
+        self.value = float(value)
         self.last_update = last_update
 
-    def __repr__(self):
-        return "(" + str(self.progress) + ", " + str(self.last_update) + ")"
+    def __str__(self):
+        return "ActivityRecord" + repr(vars(self))
 
 
 class Message():
@@ -28,13 +28,16 @@ class Message():
         self.count = count
         self.nodes = []
         self.edges = []
-        self.remaining_nodes = []
-        self.remaining_edges = []
-        self.edge_progress = {}
-        self.node_progress = {}
 
-    def __repr__(self):
-        return "[" + str(self.id_) + "] " + str(self.src) + "->" + str(self.dst) + " " + str(self.remaining_nodes)
+    def __str__(self):
+        # return "[" + repr(self.id_) + "] " + repr(self.src) + "->" + repr(self.dst)
+        return self.__class__.__name__ + repr(vars(self))
+
+    def get_next_node_id(self, edge_id):
+        return self.nodes[self.edges.index(edge_id) + 1]
+
+    def get_next_edge_id(self, node_id):
+        return self.edges[self.nodes.index(node_id)]
 
 
 class PendingMessage():
@@ -50,6 +53,9 @@ class Event(object):
         self.id_ = Event.next_id
         Event.next_id += 1
 
+    def __str__(self):
+        return self.__class__.__name__ + repr(vars(self))
+
 
 class InjectMessageEvent(Event):
     def __init__(self, message):
@@ -64,58 +70,57 @@ class NetworkDeliveredMessageEvent(Event):
 
 
 class NodeRecvMessageEvent(Event):
-    def __init__(self, message_id):
+    def __init__(self, message_id, node_id):
         super(NodeRecvMessageEvent, self).__init__()
         self.message_id = message_id
-
-    def __repr__(self):
-        return "NodeRecvMessage{" + str(vars(self)) + "}"
+        self.node_id = node_id
 
 
 class EdgeRecvMessageEvent(Event):
-    def __init__(self, message_id):
+    def __init__(self, message_id, edge_id):
         super(EdgeRecvMessageEvent, self).__init__()
         self.message_id = message_id
+        self.edge_id = edge_id
 
 
 class NodeFinishMessageEvent(Event):
-    def __init__(self, node_id, message_id,):
+    def __init__(self, node_id, message_id):
         super(NodeFinishMessageEvent, self).__init__()
-        self.node_id = node_id
         self.message_id = message_id
+        self.node_id = node_id
 
 
 class EdgeFinishMessageEvent(Event):
     def __init__(self, edge_id, message_id):
         super(EdgeFinishMessageEvent, self).__init__()
-        self.edge_id = edge_id
         self.message_id = message_id
+        self.edge_id = edge_id
 
 
-class Node(object):
+class GraphElement(object):
     def __init__(self, bandwidth, latency=0.0):
         self.bandwidth = float(bandwidth)
         self.latency = float(latency)
-        self.active_messages = set()
+        self.reset()
 
     def reset(self):
-        self.active_messages = set()
+        self.active_messages = {}
 
     def effective_bandwidth(self):
         return self.bandwidth / len(self.active_messages)
 
+    def __str__(self):
+        return self.__class__.__name__ + repr(vars(self))
 
-class Edge(object):
+
+class Node(GraphElement):
     def __init__(self, bandwidth, latency=0.0):
-        self.bandwidth = float(bandwidth)
-        self.latency = float(latency)
-        self.active_messages = set()
+        super(Node, self).__init__(bandwidth, latency)
 
-    def reset(self):
-        self.active_messages = set()
 
-    def effective_bandwidth(self):
-        return self.bandwidth / len(self.active_messages)
+class Edge(GraphElement):
+    def __init__(self, bandwidth, latency=0.0):
+        super(Edge, self).__init__(bandwidth, latency)
 
 
 class Network(object):
@@ -178,9 +183,9 @@ class Network(object):
     def active_messages(self):
         ret = set()
         for edge in self.edges:
-            ret |= edge.active_messages
+            ret |= set(edge.active_messages.keys())
         for node in self.nodes:
-            ret |= node.active_messages
+            ret |= set(node.active_messages.keys())
         return ret
 
     def message_active_nodes(self, message):
@@ -211,12 +216,20 @@ class Network(object):
         elif active_edges:
             return self.get_edge_bandwidth(active_edges)
         else:
-            assert False and "message is not active on any nodes or edges?"
+            # assert False and "message is not active on any nodes or edges?"
+            return 0
+
+    def message_time_remaining(self, message, graph_element):
+        print "time remaining for", message, "on", graph_element
+        activity = graph_element.active_messages[message]
+        progress = activity.value
+        delay = (message.count - progress) / \
+            self.current_message_throughput(message)
+        assert delay >= 0
+        return delay
 
     def update_event_priorities(self):
-        print "Updating event priority at", self.time
-
-        self.update_message_progress()
+        self.update_active_message_progress()
 
         print "Updating event priority after updating progress"
 
@@ -226,40 +239,49 @@ class Network(object):
                 message = self.messages[event.message_id]
                 if isinstance(event, NodeFinishMessageEvent):
                     throughput = self.current_message_throughput(message)
-                    node = self.nodes[event.node_id]
-                    progress = message.node_progress[node].progress
-                    assert progress >= 0
-                    time_remaining = (message.count - progress) / throughput
-                    print time_remaining, message.count, progress, throughput
+                    if throughput == 0:
+                        time_remaining = float('inf')
+                    else:
+                        element = self.nodes[event.node_id]
+                        progress = element.active_messages[message].value
+                        assert progress >= 0
+                        time_remaining = (
+                            message.count - progress) / throughput
                     assert time_remaining >= 0
                     new_remaining[event] = time_remaining
                 elif isinstance(event, EdgeFinishMessageEvent):
                     throughput = self.current_message_throughput(message)
-                    edge = self.edges[event.edge_id]
-                    progress = message.edge_progress[edge].progress
-                    assert progress >= 0
-                    time_remaining = (message.count - progress) / throughput
+                    if throughput == 0:
+                        time_remaining = float('inf')
+                    else:
+                        element = self.edges[event.edge_id]
+                        progress = element.active_messages[message].value
+                        assert progress >= 0
+                        time_remaining = (
+                            message.count - progress) / throughput
                     assert time_remaining >= 0
                     new_remaining[event] = time_remaining
 
         for event, time_remaining in new_remaining.iteritems():
+            print "Updating", event, "to", time_remaining
             self.add_event(event, time_remaining)
 
-    def update_message_progress(self):
+    def update_active_message_progress(self):
         print "Updating all message progress at", self.time
         # traceback.print_stack(file=sys.stdout)
-        for message in self.active_messages():
-            throughput = self.current_message_throughput(message)
-            print "active message:", message, "has throughput:", throughput
-            for element, progress in itertools.chain(message.edge_progress.iteritems(), message.node_progress.iteritems()):
-                print "progress update on", element, "from", progress, "->",
+        for element in itertools.chain(self.nodes, self.edges):
+            for message, activity in element.active_messages.iteritems():
+                throughput = self.current_message_throughput(message)
+                print "active message:", message, "on", element, "has throughput", throughput
+
+                print "progress update on", element, "from", activity, "->",
                 if throughput == float('inf'):
-                    progress.progress = message.count
+                    activity.value = message.count
                 else:
-                    progress.progress += (self.time -
-                                          progress.last_update) * throughput
-                progress.last_update = self.time
-                print progress
+                    activity.value += (self.time -
+                                       activity.last_update) * throughput
+                activity.last_update = self.time
+                print activity
 
     def dump_edge_use(self, init=False):
         if init:
@@ -292,14 +314,13 @@ class Network(object):
             print "issued", len(issued), "messages"
 
     def add_event(self, event, delay):
-        assert delay != float('inf')
-        for priority, count, existing_event in self.events.pq:
-            if event == existing_event and priority != self.time + delay:
-                print "updating event priority:", priority, self.time + delay
+        # for priority, count, existing_event in self.events.pq:
+        #     if event == existing_event and priority != self.time + delay:
+        #         print "updating event priority:", priority, self.time + delay
         self.events.add_task(event, self.time + delay)
 
     def time_field(self):
-        return str(self.time) + "::"
+        return "SIM@" + str(self.time) + "::"
 
     def run(self):
 
@@ -307,12 +328,10 @@ class Network(object):
 
         self.trigger_pending()
 
-        while len(self.events) > 0:
+        while self.events:
 
             self.time, event = self.events.pop_task()
-            print "Simulation @ " + str(self.time) + "s:", event
-
-            self.update_message_progress()
+            print self.time_field(), event
 
             # for message in self.messages.itervalues():
             #     print "Active message", message.id_, "progress:", message.progress, "/", message.count
@@ -331,42 +350,62 @@ class Network(object):
                 # Start the transmit
                 print "message will be tx immediately on route", message.nodes
 
-                message.remaining_nodes = list(message.nodes)
-                message.remaining_edges = list(message.edges)
                 self.add_event(
-                    NodeRecvMessageEvent(message.id_), 0)
+                    NodeRecvMessageEvent(message.id_, message.nodes[0]), 0)
 
             elif isinstance(event, NodeRecvMessageEvent):
                 # Print the state of the links before we start transmitting
                 self.dump_edge_use()
 
                 message = self.messages[event.message_id]
-                node_id = message.remaining_nodes[0]
-                message.remaining_nodes = message.remaining_nodes[1:]
+                node_id = event.node_id
+                node = self.nodes[node_id]
 
                 # The node is now participating in the message
-                node = self.nodes[node_id]
-                node.active_messages.add(message)
-
-                # Just getting started on this node
-                message.node_progress[node] = ProgressUpdate(0, self.time)
-
-                # If there are further nodes along the route, forward the message
-                if message.remaining_edges:
-                    # Edge will recv after processing time
-                    self.add_event(EdgeRecvMessageEvent(
-                        message.id_), node.latency)
+                node.active_messages[message] = ActivityRecord(0, self.time)
 
                 # If this is the first node in the message, it will finish based on the current message throughput
-                if event.node_id == message.nodes[0]:
-                    progress = message.node_progress[node]
-                    delay = (message.count - progress.progress) / \
-                        self.current_message_throughput(message)
-                    assert delay >= 0
+                if node_id == message.nodes[0]:
+                    delay = self.message_time_remaining(message, node)
                     self.add_event(NodeFinishMessageEvent(
                         node_id, message.id_), delay)
 
+                # If there are further nodes along the route, forward the message
+                if node_id != message.nodes[-1]:
+                    # Edge will recv after processing time
+                    print "starting next edge after", node.latency
+                    self.add_event(EdgeRecvMessageEvent(
+                        message.id_, message.get_next_edge_id(node_id)), node.latency)
+
                 # This activity may affect other messages
+                print "update_event_priorities after", event
+                self.update_event_priorities()
+
+            elif isinstance(event, NodeFinishMessageEvent):
+                message = self.messages[event.message_id]
+                node = self.nodes[event.node_id]
+
+                # Remove the message from active messages
+                del node.active_messages[message]
+
+                # If this is the last node in the message, notify that network has finished
+                print "nodefinish", message.nodes, event.node_id
+                if event.node_id == message.nodes[-1]:
+                    # if not self.message_active_edges(message) and not self.message_active_nodes(message):
+                    print "Last node finished"
+                    self.add_event(
+                        NetworkDeliveredMessageEvent(event.message_id), 0)
+                else:  # otherwise, release the next edge
+                    next_edge_id = message.get_next_edge_id(event.node_id)
+                    print "releasing next edge:", next_edge_id
+                    # delay = self.message_edge_time_remaining(
+                    #     message, next_edge)
+                    delay = 0
+                    self.add_event(EdgeFinishMessageEvent(
+                        next_edge_id, event.message_id), delay)
+
+                # This completion may affect other messages
+                print "update_event_priorities after", event
                 self.update_event_priorities()
 
             elif isinstance(event, EdgeRecvMessageEvent):
@@ -374,79 +413,39 @@ class Network(object):
                 self.dump_edge_use()
 
                 message = self.messages[event.message_id]
-                edge_id = message.remaining_edges[0]
-                message.remaining_edges = message.remaining_edges[1:]
-
+                edge_id = event.edge_id
                 edge = self.edges[edge_id]
-                edge.active_messages.add(message)
 
-                # Just getting started on this edge
-                message.edge_progress[edge] = ProgressUpdate(0, self.time)
+                # Edge is now participating in the message
+                edge.active_messages[message] = ActivityRecord(0, self.time)
 
-                # Node recvs after our latency
+                # Next node recvs after our latency
                 self.add_event(NodeRecvMessageEvent(
-                    message.id_), self.edges[edge_id].latency)
+                    message.id_, message.get_next_node_id(edge_id)), edge.latency)
 
-                # We finish based on the message throughput
-                progress = message.edge_progress[edge]
-                delay = (message.count - progress.progress) / \
-                    self.current_message_throughput(message)
-                assert delay >= 0
-                self.add_event(EdgeFinishMessageEvent(
-                    edge_id, message.id_), delay)
-
-                # This activity may affect other messages
+                print "update_event_priorities after", event
                 self.update_event_priorities()
 
                 self.dump_edge_use()
 
-            elif isinstance(event, NodeFinishMessageEvent):
-                message = self.messages[event.message_id]
-                node = self.nodes[event.node_id]
-
-                # Remove the message from active messages
-                node.active_messages.remove(message)
-
-                # Remove the progress record from the message
-                assert node in message.node_progress
-                del message.node_progress[node]
-
-                # When a node finishes, the next thing in the message may also finish
-                # FIXME
-                assert False and "unhandled"
-
-                # If this is the last node in the message, notify that network has finished
-                # If the message is not active anywhere, notify that the network has finished.
-                # Certain elements may have 0 latency, and we don't want to create a delivery
-                #  event until all simultaneous finish events are done.
-                print "nodefinish", message.nodes, event.node_id
-                if event.node_id == message.nodes[-1]:
-                    # if not self.message_active_edges(message) and not self.message_active_nodes(message):
-                    print "Message is inactive everywhere"
-                    self.add_event(
-                        NetworkDeliveredMessageEvent(event.message_id), 0)
-
-                # This completion may affect other messages
-                print "Updating priorities after node finished"
-                self.update_event_priorities()
-
             elif isinstance(event, EdgeFinishMessageEvent):
                 message = self.messages[event.message_id]
-                node = self.nodes[event.edge_id]
+                edge = self.edges[event.edge_id]
+                print message
+
+                # Next node may finish
+                next_node_id = message.get_next_node_id(event.edge_id)
+                print "next node may finish:", next_node_id
+                next_node = self.nodes[next_node_id]
+                delay = self.message_time_remaining(message, next_node)
+                self.add_event(NodeFinishMessageEvent(
+                    next_node_id, event.message_id), delay)
 
                 # Remove the message from active messages
-                self.edges[event.edge_id].active_messages.remove(message)
+                del edge.active_messages[message]
 
-                # Remove the progress record from the message
-                assert edge in message.edge_progress
-                del message.edge_progress[edge]
-
-                # This completion may affect other messages
+                print "update_event_priorities after", event
                 self.update_event_priorities()
-
-                # When an edge finishes, the next node may finish
-                # FIXME
-                assert False and "Fixme"
 
             elif isinstance(event, NetworkDeliveredMessageEvent):
                 # Print the state of the links before we stop transmitting
