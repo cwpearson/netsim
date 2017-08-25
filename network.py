@@ -351,13 +351,13 @@ class Network(object):
                     self.add_event(EdgeRecvMessageEvent(
                         message.id_), node.latency)
 
-                    # Schedule this node to be done with the message based on the current message throughput
-                    progress = message.node_progress[node]
-                    delay = (message.count - progress.progress) / \
-                        self.current_message_throughput(message)
-                    assert delay >= 0
-                    self.add_event(NodeFinishMessageEvent(
-                        node_id, message.id_), delay)
+                # Schedule this node to be done with the message based on the current message throughput
+                progress = message.node_progress[node]
+                delay = (message.count - progress.progress) / \
+                    self.current_message_throughput(message)
+                assert delay >= 0
+                self.add_event(NodeFinishMessageEvent(
+                    node_id, message.id_), delay)
 
                 # This activity may affect other messages
                 self.update_event_priorities()
@@ -405,6 +405,7 @@ class Network(object):
                 del message.node_progress[node]
 
                 # If this is the last node in the message, notify that network has finished
+                print "nodefinish", message.nodes, event.node_id
                 if event.node_id == message.nodes[-1]:
                     print "last node in message, adding deliveredmessagevent"
                     self.add_event(
