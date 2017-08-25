@@ -20,7 +20,7 @@ n.join(n2, n6, Edge(2**10))
 
 # point-to-point
 block = []
-for i in range(1, 2):
+for i in range(2, 3):
     block += [n.inject(Message(0, i, 1024))]
 
 end_time = n.run()

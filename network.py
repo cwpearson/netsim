@@ -3,6 +3,9 @@ from priorityqueue import PQ
 import itertools
 import traceback
 import sys
+import pprint
+
+pp = pprint.PrettyPrinter(depth=2)
 
 
 class ProgressUpdate():
@@ -64,6 +67,9 @@ class NodeRecvMessageEvent(Event):
     def __init__(self, message_id):
         super(NodeRecvMessageEvent, self).__init__()
         self.message_id = message_id
+
+    def __repr__(self):
+        return "NodeRecvMessage{" + str(vars(self)) + "}"
 
 
 class EdgeRecvMessageEvent(Event):
@@ -351,13 +357,14 @@ class Network(object):
                     self.add_event(EdgeRecvMessageEvent(
                         message.id_), node.latency)
 
-                # Schedule this node to be done with the message based on the current message throughput
-                progress = message.node_progress[node]
-                delay = (message.count - progress.progress) / \
-                    self.current_message_throughput(message)
-                assert delay >= 0
-                self.add_event(NodeFinishMessageEvent(
-                    node_id, message.id_), delay)
+                # If this is the first node in the message, it will finish based on the current message throughput
+                if event.node_id == message.nodes[0]:
+                    progress = message.node_progress[node]
+                    delay = (message.count - progress.progress) / \
+                        self.current_message_throughput(message)
+                    assert delay >= 0
+                    self.add_event(NodeFinishMessageEvent(
+                        node_id, message.id_), delay)
 
                 # This activity may affect other messages
                 self.update_event_priorities()
@@ -404,10 +411,18 @@ class Network(object):
                 assert node in message.node_progress
                 del message.node_progress[node]
 
+                # When a node finishes, the next thing in the message may also finish
+                # FIXME
+                assert False and "unhandled"
+
                 # If this is the last node in the message, notify that network has finished
+                # If the message is not active anywhere, notify that the network has finished.
+                # Certain elements may have 0 latency, and we don't want to create a delivery
+                #  event until all simultaneous finish events are done.
                 print "nodefinish", message.nodes, event.node_id
                 if event.node_id == message.nodes[-1]:
-                    print "last node in message, adding deliveredmessagevent"
+                    # if not self.message_active_edges(message) and not self.message_active_nodes(message):
+                    print "Message is inactive everywhere"
                     self.add_event(
                         NetworkDeliveredMessageEvent(event.message_id), 0)
 
@@ -428,6 +443,10 @@ class Network(object):
 
                 # This completion may affect other messages
                 self.update_event_priorities()
+
+                # When an edge finishes, the next node may finish
+                # FIXME
+                assert False and "Fixme"
 
             elif isinstance(event, NetworkDeliveredMessageEvent):
                 # Print the state of the links before we stop transmitting
