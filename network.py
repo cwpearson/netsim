@@ -6,6 +6,18 @@ NO_OP = lambda *args, **kwargs: None
 class UnhandledEventError(Exception):
     pass
 
+class RoutesError(Exception):
+    pass
+
+class Uuid(object):
+    uuid = 0
+    def __init__(self):
+        self.uuid_ = self.new_uuid()
+
+    def new_uuid(self):
+        Uuid.uuid += 1
+        return Uuid.uuid - 1
+
 class Event(object):
     def __init__(self, handler):
         self.handler_ = handler
@@ -19,16 +31,14 @@ class EventRecv(Event):
         super(EventRecv, self).__init__(node)
         self.packet_ = packet
 
-class Packet(object):
-    uid = 0
-    def __init__(self):
-        self.dst_ = None # where this packet is trying to go
+class Packet(Uuid):
+    def __init__(self, dst, next_packet, sequence_number, size):
+        super(Packet, self).__init__()
+        self.dst_ = dst # where this packet is trying to go
         self.link_ = None # Current link being traversed
-        self.next_packet_ = None # next packet in the message
-        self.size_ = None # size in bytes
-        self.sequence_number_ = None
-        self.uid_ = Packet.uid # unique id for the packet
-        Packet.uid += 1
+        self.next_packet_ = next_packet # next packet in the message
+        self.sequence_number_ = sequence_number
+        self.size_ = size # size in bytes
 
 class Handler(object):
     def __init__(self):
@@ -50,7 +60,7 @@ class Node(Handler):
 
     def forward(self, packet):
         if not self.route_:
-            assert False
+            raise RoutesError("node routes are not set")
         link = self.route_[packet.dst_]
         link.send(packet)
 
@@ -96,32 +106,28 @@ class Link(object):
         self.busy_ = False
         self.queue = []
 
-class Message():
-    next_id = 0
-
+class Message(Uuid):
     def __init__(self, src, dst, count):
-        self.id_ = Message.next_id
-        Message.next_id += 1
-        self.src = src
-        self.dst = dst
-        self.count = count
-        self.progress = 0.0
-        self.edges = []
-        self.nodes = []
-        self.last_update_time = 0.0
+        self.src_ = src
+        self.dst_ = dst
+        self.count_ = count
+        super(Message, self).__init__()
 
-    def __repr__(self):
-        return "["+str(self.id_)+"] " + str(self.src) + " --" + str(int(self.progress))+"/"+str(self.count) + "--> " + str(self.dst)
+    def make_packets(self, max_packet_size):
+        packets = []
+        for i in range(0, self.count_, max_packet_size):
+            packet_size = min(max_packet_size, self.count_ - i)
+            packets += [Packet(self.dst_, None, -1, packet_size)]
 
-class PendingMessage():
-    def __init__(self, message, delay):
-        self.message = message
-        self.delay = delay
+        ## Give each packet a sequence number
+        for i in range(len(packets)):
+            packets[i].sequence_number_ = i
 
-class InjectMessageEvent(Event):
-    def __init__(self, message):
-        super(InjectMessageEvent, self).__init__()
-        self.message = message
+        ## Tell each packet which packet is next
+        for i in range(0, len(packets)-1):
+            packets[i].next_packet_ = packets[i+1]
+
+        return packets
 
 class Network(object):
 
@@ -136,8 +142,6 @@ class Network(object):
             for dst, link in dsts.iteritems():
                 dst.reset()
                 link.reset()
-
-        self.pending_ = {}
         self.time_ = 0.0
 
     def add_node(self, node):
@@ -156,9 +160,11 @@ class Network(object):
     def schedule(self, event, delay):
         self.events_.add_task(event, self.time_ + delay)
 
-    def inject(self, message, waitfor=[], delay=0.0):
-        p = PendingMessage(message, delay)
-        # self.events.add_task(InjectMessageEvent(message), self.time + delay)
+    def inject(self, message):
+        packet_size = 128
+        packets = message.make_packets(packet_size)
+        for packet in packets:
+            message.src_.forward(packet)
         return message
 
     def bfs_paths(self, start, goal):
