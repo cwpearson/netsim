@@ -49,8 +49,8 @@ class Handler(object):
 
 class Node(Handler):
     def __init__(self):
-        self.links = [] # outgoing links
-        self.route_ = [] # the next link to reach a particular node
+        self.links_ = {} # link associated with a particular neighbor
+        self.route_ = {}  # the next link to take to reach any node
 
     def handle(self, event):
         if isinstance(event, EventRecv):
@@ -61,8 +61,12 @@ class Node(Handler):
     def forward(self, packet):
         if not self.route_:
             raise RoutesError("node routes are not set")
-        link = self.route_[packet.dst_]
-        link.send(packet)
+
+        if packet.dst_ == self:
+            print "packet arrived at dst!"
+        else:
+            link = self.route_[packet.dst_]
+            link.send_packet(packet)
 
     def reset(self):
         pass
@@ -73,12 +77,12 @@ class Link(object):
         self.busy_ = False
         self.delay_ = float(delay)
         self.dst_ = None
-        self.neighbor_ = None
         self.network_ = network
         self.queue_ = []
         self.src_ = None
 
     def send(self):
+        assert self.dst_
         if self.queue_:
             packet = self.queue_[0]
             self.queue_ = self.queue_[1:]
@@ -107,9 +111,9 @@ class Link(object):
         self.queue = []
 
 class Message(Uuid):
-    def __init__(self, src, dst, count):
-        self.src_ = src
-        self.dst_ = dst
+    def __init__(self, src_node, dst_node, count):
+        self.src_ = src_node
+        self.dst_ = dst_node
         self.count_ = count
         super(Message, self).__init__()
 
@@ -149,13 +153,14 @@ class Network(object):
         return node
 
     def join_symmetric(self, n1, n2, bandwidth, delay):
-        l1 = Link(self, bandwidth, delay)
-        l2 = Link(self, bandwidth, delay)
-        self.join(n1, n2, l1)
-        self.join(n2, n1, l2)
+        self.join(n1, n2, Link(self, bandwidth, delay))
+        self.join(n2, n1, Link(self, bandwidth, delay))
 
     def join(self, src_node, dst_node, link):
+        link.dst_ = dst_node
+        link.src_ = src_node
         self.graph_.setdefault(src_node, {})[dst_node] = link
+        src_node.links_[dst_node] = link
 
     def schedule(self, event, delay):
         self.events_.add_task(event, self.time_ + delay)
@@ -177,6 +182,15 @@ class Network(object):
                     yield path + [nbr]
                 else:
                     queue.append((nbr, path + [nbr]))
+
+
+    def initialize_routes(self):
+        for src_node in self.graph_:
+            for dst_node in self.graph_:
+                if src_node is not dst_node:
+                    paths = [p for p in self.bfs_paths(src_node, dst_node)]
+                    shortest_path = paths[0]
+                    src_node.route_[dst_node] = src_node.links_[shortest_path[1]]
 
 
     # def dump_edge_use(self, init=False):
@@ -211,8 +225,7 @@ class Network(object):
         # self.dump_edge_use(init=True)
 
         while len(self.events_) > 0:
-
-            self.time, event = self.events_.pop_task()
+            self.time_, event = self.events_.pop_task()
             print "Simulation @ " + str(self.time_)+"s:", event
             
             event.handler_.handle(event)

@@ -10,7 +10,7 @@ class PQ(object):
         self.counter = itertools.count()     # unique sequence count                             
 
     def __len__(self):
-        return len(self.pq)
+        return len([e for e in self.pq if e != PQ.REMOVED])
 
     def add_task(self, task, priority=0):
         'Add a new task or update the priority of an existing task'
