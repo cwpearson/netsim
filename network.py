@@ -3,6 +3,9 @@ from priorityqueue import PQ
 
 NO_OP = lambda *args, **kwargs: None
 
+class UnhandledEventError(Exception):
+    pass
+
 class Event(object):
     def __init__(self, handler):
         self.handler_ = handler
@@ -12,12 +15,14 @@ class EventTxDone(Event):
         super(EventTxDone, self).__init__(link)
 
 class EventRecv(Event):
-    def __init__(self, node):
+    def __init__(self, node, packet):
         super(EventRecv, self).__init__(node)
+        self.packet_ = packet
 
 class Packet(object):
     uid = 0
     def __init__(self):
+        self.dst_ = None # where this packet is trying to go
         self.link_ = None # Current link being traversed
         self.next_packet_ = None # next packet in the message
         self.size_ = None # size in bytes
@@ -36,9 +41,19 @@ class Node(Handler):
     def __init__(self):
         self.queue = []
         self.links = [] # outgoing links
+        self.route_ = [] # the next link to reach a particular node
 
     def handle(self, event):
-        raise NotImplementedError
+        if isinstance(event, EventRecv):
+            self.forward(event.packet_)
+        else:
+            raise UnhandledEventError(event)
+
+    def forward(self, packet):
+        if not self.route_:
+            assert False
+        link = self.route_[packet.dst_]
+        link.send(packet)
 
 class Link(object):
     def __init__(self):
@@ -56,14 +71,24 @@ class Link(object):
             packet = self.queue_[0]
             self.queue_ = self.queue_[1:]
 
-            packet.src_ = self.src_
-            packet.dst_ = self.dst_
             packet.link_ = self
 
             tx_time = packet.size_ * 8 / self.bandwidth_
             self.network_.schedule(EventTxDone(self), tx_time)
-            self.network_.schedule(EventRecv(self.dst_), tx_time + self.delay_)
+            self.network_.schedule(EventRecv(self.dst_, packet), tx_time + self.delay_)
             self.busy_ = True
+
+    def send_packet(self, packet):
+        self.queue_ += [packet]
+        if not self.busy_:
+            self.send()
+
+    def handle(self, event):
+        if isinstance(event, EventTxDone):
+            self.busy_ = False
+            self.send()
+        else:
+            raise UnhandledEventError
 
 class Message():
     next_id = 0
