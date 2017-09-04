@@ -47,10 +47,16 @@ class Handler(object):
     def handle(self, event):
         raise NotImplementedError
 
-class Node(Handler):
+class Node(Handler, Uuid):
     def __init__(self):
         self.links_ = {} # link associated with a particular neighbor
         self.route_ = {}  # the next link to take to reach any node
+        Uuid.__init__(self)
+        Handler.__init__(self)
+
+    def __str__(self):
+        return "node"+str(self.uuid_)
+
 
     def handle(self, event):
         if isinstance(event, EventRecv):
@@ -71,7 +77,7 @@ class Node(Handler):
     def reset(self):
         pass
 
-class Link(object):
+class Link(Uuid):
     def __init__(self, network, bandwidth, delay):
         self.bandwidth_ = float(bandwidth)
         self.busy_ = False
@@ -80,6 +86,10 @@ class Link(object):
         self.network_ = network
         self.queue_ = []
         self.src_ = None
+        Uuid.__init__(self)
+
+    def __str__(self):
+        return "link" + str(self.uuid_)
 
     def send(self):
         assert self.dst_
@@ -139,6 +149,13 @@ class Network(object):
         self.time_ = 0.0
         self.events_ = PQ()
         self.graph_ = {}
+
+    def __str__(self):
+        s = ""
+        for src_node, dsts in self.graph_.iteritems():
+            for dst_node, link in dsts.iteritems():
+                s += str(src_node) + " -> " + str(dst_node) + " == " + str(link) + "\n"
+        return s
 
     def reset(self):
         for src, dsts in self.graph_.iteritems():

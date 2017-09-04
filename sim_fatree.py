@@ -1,4 +1,5 @@
 from network import Network, Node, Link, Message
+from program import Program
 
 n = Network()
 
@@ -21,6 +22,7 @@ n.join_symmetric(nodes[2], nodes[5], 2**10, 0.1)
 n.join_symmetric(nodes[2], nodes[6], 2**10, 0.1)
 
 n.initialize_routes()
+print str(n)
 # point-to-point
 block = []
 
@@ -31,7 +33,18 @@ end_time = n.run()
 print "Simulation took", end_time
 
 
-# n.reset()
+
+
+
+n.reset()
+
+# Set up the program
+p = Program()
+m = None
+# for i in range(0, 10):
+#     m = p.add(Message(), after=m)
+
+# n.run_program(p)
 
 #topology-aware
 # n1 = n.inject(Message(0,1,1024))
