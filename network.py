@@ -1,5 +1,7 @@
 import csv
 from priorityqueue import PQ 
+from packet import ZeroOverheadPacket as Packet
+from uuid import Uuid
 
 NO_OP = lambda *args, **kwargs: None
 
@@ -8,15 +10,6 @@ class UnhandledEventError(Exception):
 
 class RoutesError(Exception):
     pass
-
-class Uuid(object):
-    uuid = 0
-    def __init__(self):
-        self.uuid_ = self.new_uuid()
-
-    def new_uuid(self):
-        Uuid.uuid += 1
-        return Uuid.uuid - 1
 
 class Event(object):
     def __init__(self, handler):
@@ -30,15 +23,6 @@ class EventRecv(Event):
     def __init__(self, node, packet):
         super(EventRecv, self).__init__(node)
         self.packet_ = packet
-
-class Packet(Uuid):
-    def __init__(self, dst, next_packet, sequence_number, size):
-        super(Packet, self).__init__()
-        self.dst_ = dst # where this packet is trying to go
-        self.link_ = None # Current link being traversed
-        self.next_packet_ = next_packet # next packet in the message
-        self.sequence_number_ = sequence_number
-        self.size_ = size # size in bytes
 
 class Handler(object):
     def __init__(self):
@@ -99,7 +83,7 @@ class Link(Uuid):
 
             packet.link_ = self
 
-            tx_time = packet.size_ * 8 / self.bandwidth_
+            tx_time = packet.size() * 8 / self.bandwidth_
             self.network_.schedule(EventTxDone(self), tx_time)
             self.network_.schedule(EventRecv(self.dst_, packet), tx_time + self.delay_)
             self.busy_ = True
