@@ -39,7 +39,6 @@ class Handler(object):
 
 class Node(Handler):
     def __init__(self):
-        self.queue = []
         self.links = [] # outgoing links
         self.route_ = [] # the next link to reach a particular node
 
@@ -55,14 +54,17 @@ class Node(Handler):
         link = self.route_[packet.dst_]
         link.send(packet)
 
+    def reset(self):
+        pass
+
 class Link(object):
-    def __init__(self):
-        self.bandwidth_ = float('inf')
+    def __init__(self, network, bandwidth, delay):
+        self.bandwidth_ = float(bandwidth)
         self.busy_ = False
-        self.delay_ = 0.0
+        self.delay_ = float(delay)
         self.dst_ = None
         self.neighbor_ = None
-        self.network_ = None
+        self.network_ = network
         self.queue_ = []
         self.src_ = None
 
@@ -89,6 +91,10 @@ class Link(object):
             self.send()
         else:
             raise UnhandledEventError
+
+    def reset(self):
+        self.busy_ = False
+        self.queue = []
 
 class Message():
     next_id = 0
@@ -138,9 +144,14 @@ class Network(object):
         self.graph_[node] = {}
         return node
 
-    def join(self, n1, n2, edge):
-        self.graph_.setdefault(n1, {})[n2] = edge
-        self.graph_.setdefault(n2, {})[n1] = edge
+    def join_symmetric(self, n1, n2, bandwidth, delay):
+        l1 = Link(self, bandwidth, delay)
+        l2 = Link(self, bandwidth, delay)
+        self.join(n1, n2, l1)
+        self.join(n2, n1, l2)
+
+    def join(self, src_node, dst_node, link):
+        self.graph_.setdefault(src_node, {})[dst_node] = link
 
     def schedule(self, event, delay):
         self.events_.add_task(event, self.time_ + delay)
@@ -175,19 +186,19 @@ class Network(object):
     #     writer.writerow(row)
     #     csvfile.close()
 
-    def trigger_pending(self):
-        '''Inject any pending messages with no dependencies'''
-        issued = []
-        for pending_message, deps in self.pending.iteritems():
-            if not deps: # not waiting on anything
-                message = pending_message.message
-                delay = pending_message.delay
-                self.events.add_task(InjectMessageEvent(message), self.time + delay)
-                issued += [pending_message]
-        for key in issued:
-            del self.pending[key]
-        if issued:
-            print "issued", len(issued), "messages"
+    # def trigger_pending(self):
+    #     '''Inject any pending messages with no dependencies'''
+    #     issued = []
+    #     for pending_message, deps in self.pending.iteritems():
+    #         if not deps: # not waiting on anything
+    #             message = pending_message.message
+    #             delay = pending_message.delay
+    #             self.events.add_task(InjectMessageEvent(message), self.time + delay)
+    #             issued += [pending_message]
+    #     for key in issued:
+    #         del self.pending[key]
+    #     if issued:
+    #         print "issued", len(issued), "messages"
 
     def run(self):
 
@@ -200,4 +211,4 @@ class Network(object):
             
             event.handler_.handle(event)
 
-        return self.time
+        return self.time_

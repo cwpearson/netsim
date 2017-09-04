@@ -1,22 +1,22 @@
-from network import Network, Node, Edge, Message
+from network import Network, Node, Link, Message
 
 n = Network()
 
 # Fat tree of infinitely fast nodes
-n0 = n.add_node(Node(float('inf'), 0.0))
-n1 = n.add_node(Node(float('inf'), 0.0))
-n2 = n.add_node(Node(float('inf'), 0.0))
-n3 = n.add_node(Node(float('inf'), 0.0))
-n4 = n.add_node(Node(float('inf'), 0.0))
-n5 = n.add_node(Node(float('inf'), 0.0))
-n6 = n.add_node(Node(float('inf'), 0.0))
+n0 = n.add_node(Node())
+n1 = n.add_node(Node())
+n2 = n.add_node(Node())
+n3 = n.add_node(Node())
+n4 = n.add_node(Node())
+n5 = n.add_node(Node())
+n6 = n.add_node(Node())
 
-n.join(n0, n1, Edge(2**10))
-n.join(n0, n2, Edge(2**10))
-n.join(n1, n3, Edge(2**10))
-n.join(n1, n4, Edge(2**10))
-n.join(n2, n5, Edge(2**10))
-n.join(n2, n6, Edge(2**10))
+n.join_symmetric(n0, n1, 2**10, 0.1)
+n.join_symmetric(n0, n2, 2**10, 0.1)
+n.join_symmetric(n1, n3, 2**10, 0.1)
+n.join_symmetric(n1, n4, 2**10, 0.1)
+n.join_symmetric(n2, n5, 2**10, 0.1)
+n.join_symmetric(n2, n6, 2**10, 0.1)
 
 # point-to-point
 block = []
