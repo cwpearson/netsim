@@ -1,7 +1,7 @@
 import csv
 from priorityqueue import PQ 
+from program import Program
 
-NO_OP = lambda *args, **kwargs: None
 
 class UnhandledEventError(Exception):
     pass
@@ -32,10 +32,11 @@ class EventRecv(Event):
         self.packet_ = packet
 
 class Packet(Uuid):
-    def __init__(self, dst, next_packet, sequence_number, size):
+    def __init__(self, message, dst, next_packet, sequence_number, size):
         super(Packet, self).__init__()
         self.dst_ = dst # where this packet is trying to go
         self.link_ = None # Current link being traversed
+        self.message_ = message # what message this packet is a part of
         self.next_packet_ = next_packet # next packet in the message
         self.sequence_number_ = sequence_number
         self.size_ = size # size in bytes
@@ -49,7 +50,8 @@ class Handler(object):
 
 class Node(Handler, Uuid):
     def __init__(self):
-        self.links_ = {} # link associated with a particular neighbor
+        self.links_ = {} # link associated with a particular neighbors
+        self.network_ = None
         self.route_ = {}  # the next link to take to reach any node
         Uuid.__init__(self)
         Handler.__init__(self)
@@ -70,6 +72,8 @@ class Node(Handler, Uuid):
 
         if packet.dst_ == self:
             print "packet arrived at dst!"
+            packet.message_.on_complete_()
+            self.network_._inject_program_messages()
         else:
             link = self.route_[packet.dst_]
             link.send_packet(packet)
@@ -121,17 +125,19 @@ class Link(Uuid):
         self.queue = []
 
 class Message(Uuid):
+    NO_OP = lambda *args, **kwargs: None
     def __init__(self, src_node, dst_node, count):
         self.src_ = src_node
         self.dst_ = dst_node
         self.count_ = count
+        self.on_complete_ = lambda *args, **kwargs: None # Function called when message is delivered
         super(Message, self).__init__()
 
     def make_packets(self, max_packet_size):
         packets = []
         for i in range(0, self.count_, max_packet_size):
             packet_size = min(max_packet_size, self.count_ - i)
-            packets += [Packet(self.dst_, None, -1, packet_size)]
+            packets += [Packet(self, self.dst_, None, -1, packet_size)]
 
         ## Give each packet a sequence number
         for i in range(len(packets)):
@@ -149,6 +155,7 @@ class Network(object):
         self.time_ = 0.0
         self.events_ = PQ()
         self.graph_ = {}
+        self.program_ = Program()
 
     def __str__(self):
         s = ""
@@ -203,6 +210,7 @@ class Network(object):
 
     def initialize_routes(self):
         for src_node in self.graph_:
+            src_node.network_ = self
             for dst_node in self.graph_:
                 if src_node is not dst_node:
                     paths = [p for p in self.bfs_paths(src_node, dst_node)]
@@ -237,9 +245,14 @@ class Network(object):
     #     if issued:
     #         print "issued", len(issued), "messages"
 
+    def _inject_program_messages(self):
+        for msg in self.program_.ready_messages():
+            self.inject(msg)
+
     def run(self):
 
         # self.dump_edge_use(init=True)
+        self._inject_program_messages()
 
         while len(self.events_) > 0:
             self.time_, event = self.events_.pop_task()
@@ -247,4 +260,10 @@ class Network(object):
             
             event.handler_.handle(event)
 
+
+
         return self.time_
+
+    def run_program(self, program):
+        self.program_ = program
+        self.run()

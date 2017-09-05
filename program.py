@@ -3,7 +3,10 @@ class Program(object):
         self.deps_ = {}
 
     def add(self, message, after=set()):
-        message.on_complete(self.notify_delivered(message))
+
+        notifier = lambda: self.notify_delivered(message)
+
+        message.on_complete_ = notifier
         self.deps_[message] = set(after)
 
     def notify_delivered(self, message):
