@@ -72,8 +72,10 @@ class Node(Handler, Uuid):
 
         if packet.dst_ == self:
             print "packet arrived at dst!"
-            packet.message_.on_complete_()
-            self.network_._inject_program_messages()
+            if packet.next_packet_ == None:
+                print "final packet from message arrived!"
+                packet.message_.on_complete_()
+                self.network_._inject_program_messages()
         else:
             link = self.route_[packet.dst_]
             link.send_packet(packet)
@@ -246,7 +248,7 @@ class Network(object):
     #         print "issued", len(issued), "messages"
 
     def _inject_program_messages(self):
-        for msg in self.program_.ready_messages():
+        for msg in self.program_.pop_ready_messages():
             self.inject(msg)
 
     def run(self):
@@ -266,4 +268,4 @@ class Network(object):
 
     def run_program(self, program):
         self.program_ = program
-        self.run()
+        return self.run()

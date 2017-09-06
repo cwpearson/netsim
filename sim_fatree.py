@@ -25,7 +25,6 @@ n.initialize_routes()
 print str(n)
 # point-to-point
 block = []
-
 for i in range(1,2):
     block += [n.inject(Message(nodes[0],nodes[i],1024))]
 
